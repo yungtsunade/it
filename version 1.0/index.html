@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<title>Interval Timer</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TIMER">
+<meta name="description" content="Konfigurierbarer Interval Timer im Matrix-Stil">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&display=swap');
+
+:root {
+  --bg:      #000;
+  --border:  #1a3d1a;
+  --green:   #33ff33;
+  --green2:  #00cc00;
+  --green3:  #1a7a1a;
+  --danger:  #ff3333;
+  --amber:   #ffaa00;
+  --muted:   #1a7a1a;
+  --mono:    'IBM Plex Mono', monospace;
+  --glow:    0 0 10px rgba(51,255,51,0.7);
+  --glow-sm: 0 0 5px rgba(51,255,51,0.4);
+  --safe-t:  env(safe-area-inset-top, 0px);
+  --safe-b:  env(safe-area-inset-bottom, 0px);
+  --nav-h:   60px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; background: #000; }
+body { font-family: var(--mono); color: var(--green); display: flex; flex-direction: column; }
+
+body::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px);
+}
+canvas#rain { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 1; }
+
+header {
+  position: relative; z-index: 10;
+  background: rgba(0,0,0,0.92); border-bottom: 1px solid var(--border);
+  padding-top: var(--safe-t); padding-left: 20px; padding-right: 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  height: calc(52px + var(--safe-t)); flex-shrink: 0; backdrop-filter: blur(4px);
+}
+.logo { font-size: 15px; font-weight: 700; color: var(--green); text-shadow: var(--glow); letter-spacing: .08em; }
+.logo span { color: var(--muted); font-weight: 400; }
+.header-right { font-size: 11px; color: var(--muted); letter-spacing: .06em; }
+
+.scroll-area {
+  position: relative; z-index: 5; flex: 1;
+  overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--nav-h) + var(--safe-b) + 16px);
+}
+main { padding: 16px; max-width: 560px; margin: 0 auto; width: 100%; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── TIMER DISPLAY ── */
+.timer-display {
+  background: rgba(0,0,0,0.85); border: 1px solid var(--border); border-radius: 4px;
+  padding: 28px 20px; text-align: center; margin-bottom: 14px; backdrop-filter: blur(3px);
+}
+.timer-phase { font-size: 11px; letter-spacing: .12em; color: var(--muted); margin-bottom: 8px; min-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timer-phase.running { color: var(--green); text-shadow: var(--glow-sm); }
+.timer-clock {
+  font-size: clamp(52px, 16vw, 80px); font-weight: 700; letter-spacing: .05em;
+  line-height: 1; color: var(--green); text-shadow: var(--glow);
+  font-variant-numeric: tabular-nums; margin-bottom: 10px;
+}
+.timer-clock.warning { color: var(--amber); text-shadow: 0 0 10px rgba(255,170,0,0.7); }
+.timer-clock.danger  { color: var(--danger); text-shadow: 0 0 10px rgba(255,51,51,0.7); animation: blink .5s step-end infinite; }
+@keyframes blink { 50% { opacity: .4; } }
+.timer-progress-wrap { width: 100%; height: 3px; background: var(--border); border-radius: 2px; margin-bottom: 12px; overflow: hidden; }
+.timer-progress-bar { height: 100%; background: var(--green); box-shadow: 0 0 6px var(--green); transition: width .3s linear; }
+.timer-progress-bar.warning { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+.timer-progress-bar.danger  { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+.timer-meta { font-size: 12px; color: var(--muted); letter-spacing: .05em; display: flex; justify-content: center; gap: 20px; }
+.timer-meta span { color: var(--green2); }
+
+/* ── CONTROLS ── */
+.controls { display: flex; gap: 10px; margin-bottom: 14px; }
+.ctrl-btn {
+  flex: 1; padding: 14px 8px; background: rgba(0,0,0,0.85);
+  border: 1px solid var(--border); border-radius: 4px; color: var(--muted);
+  font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: .05em;
+  cursor: pointer; transition: all .15s; backdrop-filter: blur(2px);
+}
+.ctrl-btn:active { transform: scale(.96); }
+.ctrl-btn.primary { border-color: var(--green); color: var(--green); text-shadow: var(--glow-sm); }
+.ctrl-btn.primary:hover { background: rgba(51,255,51,.07); }
+.ctrl-btn.stop { border-color: var(--danger); color: var(--danger); }
+.ctrl-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+/* ── ROUNDS ── */
+.rounds-display {
+  background: rgba(0,0,0,0.85); border: 1px solid var(--border); border-radius: 4px;
+  padding: 12px 16px; margin-bottom: 14px;
+  display: flex; align-items: center; justify-content: space-between; backdrop-filter: blur(2px);
+}
+.rounds-label { font-size: 11px; color: var(--muted); letter-spacing: .08em; }
+.rounds-val { font-size: 18px; font-weight: 700; color: var(--green); text-shadow: var(--glow-sm); }
+.rounds-ctrl { display: flex; gap: 8px; align-items: center; }
+.round-btn {
+  width: 32px; height: 32px; background: none; border: 1px solid var(--border); border-radius: 3px;
+  color: var(--green); font-family: var(--mono); font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all .12s;
+}
+.round-btn:active { transform: scale(.9); background: rgba(51,255,51,.1); }
+
+/* ── QUEUE ── */
+.queue-title { font-size: 11px; color: var(--muted); letter-spacing: .1em; margin-bottom: 10px; }
+.queue-list { display: flex; flex-direction: column; gap: 6px; }
+.queue-item {
+  background: rgba(0,0,0,0.85); border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px 14px; display: flex; align-items: center; gap: 12px;
+  backdrop-filter: blur(2px); transition: border-color .2s;
+}
+.queue-item.active-interval { border-color: var(--green); box-shadow: 0 0 8px rgba(51,255,51,0.15); }
+.queue-item.done { opacity: .35; }
+.queue-num  { font-size: 11px; color: var(--muted); width: 20px; flex-shrink: 0; }
+.queue-name { flex: 1; font-size: 14px; font-weight: 600; letter-spacing: .04em; }
+.queue-dur  { font-size: 13px; color: var(--green2); flex-shrink: 0; }
+.queue-dot  { width: 7px; height: 7px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+.queue-item.active-interval .queue-dot { background: var(--green); box-shadow: 0 0 5px var(--green); }
+.queue-item.done .queue-dot { background: var(--green3); }
+
+/* ── CARD ── */
+.card {
+  background: rgba(0,0,0,0.85); border: 1px solid var(--border); border-radius: 4px;
+  padding: 16px; margin-bottom: 12px; backdrop-filter: blur(2px);
+}
+.card-title { font-size: 11px; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; margin-bottom: 14px; }
+
+/* ── FORM ── */
+label { display: block; font-size: 11px; color: var(--muted); letter-spacing: .07em; text-transform: uppercase; margin-bottom: 6px; }
+input[type="text"], input[type="number"] {
+  width: 100%; background: #000; border: 1px solid var(--border); border-radius: 3px;
+  color: var(--green); font-family: var(--mono); font-size: 15px; padding: 11px 12px;
+  outline: none; transition: border-color .15s, box-shadow .15s; -webkit-appearance: none;
+}
+input:focus { border-color: var(--green); box-shadow: var(--glow-sm); }
+input::placeholder { color: var(--muted); }
+
+/* ── INTERVAL EDITOR ── */
+.interval-item {
+  background: #000; border: 1px solid var(--border); border-radius: 3px;
+  padding: 10px; margin-bottom: 8px;
+  display: grid; grid-template-columns: 1fr 60px 60px 34px; gap: 8px; align-items: center;
+}
+.interval-item input { padding: 8px; font-size: 14px; }
+.del-btn {
+  width: 34px; height: 34px; background: none; border: 1px solid var(--border); border-radius: 3px;
+  color: var(--danger); font-family: var(--mono); font-size: 15px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all .12s;
+}
+.del-btn:active { background: rgba(255,51,51,.1); }
+.add-btn {
+  width: 100%; padding: 11px; background: none; border: 1px dashed var(--border); border-radius: 3px;
+  color: var(--muted); font-family: var(--mono); font-size: 12px; letter-spacing: .07em;
+  cursor: pointer; transition: all .15s;
+}
+.add-btn:hover { border-color: var(--green); color: var(--green); }
+
+/* ── SAVED TIMERS ── */
+.saved-item {
+  background: #000; border: 1px solid var(--border); border-radius: 3px;
+  padding: 10px 12px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 10px;
+}
+.saved-item.is-active { border-color: var(--green); box-shadow: 0 0 6px rgba(51,255,51,.12); }
+.saved-name { flex: 1; font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+.saved-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.saved-active-badge { font-size: 10px; color: var(--green); letter-spacing: .06em; white-space: nowrap; }
+.act-btn {
+  padding: 6px 11px; background: none; border: 1px solid var(--green3); border-radius: 3px;
+  color: var(--green2); font-family: var(--mono); font-size: 11px; cursor: pointer;
+  letter-spacing: .05em; white-space: nowrap; transition: all .12s;
+}
+.act-btn:hover { border-color: var(--green); color: var(--green); }
+.act-btn.active-now { border-color: var(--green); color: var(--green); text-shadow: var(--glow-sm); }
+.sp-del-btn {
+  padding: 6px 9px; background: none; border: 1px solid var(--border); border-radius: 3px;
+  color: var(--danger); font-family: var(--mono); font-size: 13px; cursor: pointer; transition: all .12s;
+}
+.sp-del-btn:hover { background: rgba(255,51,51,.08); }
+
+.timer-name-row { margin-bottom: 12px; }
+.timer-name-row input { font-size: 14px; }
+
+/* ── GONG SELECTOR ── */
+.gong-row { display: flex; gap: 8px; }
+.gong-btn {
+  flex: 1; padding: 11px 6px; background: #000; border: 1px solid var(--border); border-radius: 3px;
+  color: var(--muted); font-family: var(--mono); font-size: 12px; font-weight: 600;
+  letter-spacing: .05em; cursor: pointer; text-align: center; transition: all .15s;
+}
+.gong-btn.selected { border-color: var(--green); color: var(--green); text-shadow: var(--glow-sm); background: rgba(51,255,51,.05); }
+.gong-btn:active { transform: scale(.95); }
+
+/* ── APPLY ── */
+.apply-btn {
+  width: 100%; padding: 14px; background: none; border: 1px solid var(--green); border-radius: 3px;
+  color: var(--green); font-family: var(--mono); font-size: 14px; font-weight: 700;
+  letter-spacing: .1em; cursor: pointer; text-shadow: var(--glow-sm); margin-top: 4px; transition: all .15s;
+}
+.apply-btn:hover { background: rgba(51,255,51,.07); box-shadow: var(--glow-sm); }
+.apply-btn:active { transform: scale(.98); }
+
+/* ── BOTTOM NAV ── */
+.bottom-nav {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+  background: rgba(0,0,0,0.92); border-top: 1px solid var(--border);
+  display: flex; padding-bottom: var(--safe-b);
+  backdrop-filter: blur(4px); height: calc(var(--nav-h) + var(--safe-b));
+}
+.nav-btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; background: none; border: none; color: var(--muted);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .06em; cursor: pointer;
+}
+.nav-icon { font-size: 15px; font-weight: 700; }
+.nav-btn.active { color: var(--green); text-shadow: var(--glow-sm); }
+
+/* ── TOAST ── */
+#toast {
+  position: fixed; bottom: calc(var(--nav-h) + var(--safe-b) + 14px);
+  left: 50%; transform: translateX(-50%) translateY(16px);
+  background: var(--green); color: #000; font-family: var(--mono);
+  font-weight: 700; font-size: 12px; letter-spacing: .06em;
+  padding: 10px 22px; border-radius: 40px; opacity: 0;
+  transition: opacity .2s, transform .2s; pointer-events: none; z-index: 9998; white-space: nowrap;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.empty { text-align: center; padding: 20px; color: var(--muted); font-size: 12px; letter-spacing: .06em; line-height: 2.2; }
+</style>
+</head>
+<body>
+<canvas id="rain"></canvas>
+
+<header>
+  <div class="logo">interval<span>.timer</span></div>
+  <div class="header-right" id="total-time-display">--:--</div>
+</header>
+
+<div id="install-banner" style="display:none;background:rgba(51,255,51,0.08);border-bottom:1px solid #1a3d1a;padding:10px 16px;align-items:center;gap:12px;flex-shrink:0;z-index:10;position:relative">
+  <p style="flex:1;font-size:12px;color:#33ff33;font-family:'IBM Plex Mono',monospace;letter-spacing:.05em;line-height:1.4"><strong>&gt; ALS APP INSTALLIEREN</strong></p>
+  <button onclick="installApp()" style="background:none;border:1px solid #33ff33;border-radius:3px;color:#33ff33;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;padding:8px 14px;cursor:pointer;white-space:nowrap;letter-spacing:.06em">[ INSTALL ]</button>
+  <button onclick="dismissInstall()" style="background:none;border:none;color:#1a7a1a;font-size:18px;cursor:pointer;padding:0 4px">✕</button>
+</div>
+<div class="scroll-area"><main>
+
+  <!-- ══ TIMER ══ -->
+  <div id="panel-timer" class="panel active">
+    <div class="timer-display">
+      <div class="timer-phase" id="phase-label">&gt; BEREIT_</div>
+      <div class="timer-clock" id="clock">00:00</div>
+      <div class="timer-progress-wrap">
+        <div class="timer-progress-bar" id="progress-bar" style="width:100%"></div>
+      </div>
+      <div class="timer-meta">
+        <div>RUNDE <span id="round-current">-</span> / <span id="round-total">-</span></div>
+        <div>INTERVALL <span id="interval-current">-</span> / <span id="interval-total">-</span></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="ctrl-btn primary" id="btn-start" onclick="startTimer()">[ &gt; START ]</button>
+      <button class="ctrl-btn" id="btn-pause" onclick="pauseTimer()" disabled>[ || PAUSE ]</button>
+      <button class="ctrl-btn stop" id="btn-stop" onclick="stopTimer()" disabled>[ ■ STOP ]</button>
+    </div>
+
+    <div class="rounds-display">
+      <div class="rounds-label">RUNDEN</div>
+      <div class="rounds-ctrl">
+        <button class="round-btn" onclick="changeRounds(-1)">−</button>
+        <div class="rounds-val" id="rounds-display">3</div>
+        <button class="round-btn" onclick="changeRounds(1)">+</button>
+      </div>
+    </div>
+
+    <div class="queue-title" id="seq-title">&gt; SEQUENZ_</div>
+    <div id="queue-list" class="queue-list">
+      <div class="empty">// KEIN TIMER AKTIV<br>// CONFIG → TIMER SPEICHERN & AKTIVIEREN</div>
+    </div>
+  </div>
+
+  <!-- ══ CONFIG ══ -->
+  <div id="panel-config" class="panel">
+
+    <!-- SAVED TIMERS: list only -->
+    <div class="card">
+      <div class="card-title">&gt; GESPEICHERTE TIMER_</div>
+      <div id="saved-list"></div>
+    </div>
+
+    <!-- INTERVAL EDITOR + name + save -->
+    <div class="card">
+      <div class="card-title">&gt; INTERVALLE BEARBEITEN_</div>
+      <div class="timer-name-row">
+        <label>TIMER NAME</label>
+        <input type="text" id="save-name-input" placeholder="NAME DES TIMERS…" autocomplete="off">
+      </div>
+      <div id="interval-editor"></div>
+      <button class="add-btn" onclick="addIntervalField()">[ + INTERVALL HINZUFÜGEN ]</button>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button class="add-btn" style="flex:1;min-width:80px" onclick="loadPreset('hiit')">[HIIT]</button>
+        <button class="add-btn" style="flex:1;min-width:80px" onclick="loadPreset('tabata')">[TABATA]</button>
+        <button class="add-btn" style="flex:1;min-width:80px" onclick="loadPreset('pomodoro')">[POMODORO]</button>
+        <button class="add-btn" style="flex:1;min-width:80px" onclick="loadPreset('boxing')">[BOXING]</button>
+        <button class="add-btn" style="flex:1;min-width:80px" onclick="loadPreset('stretch')">[STRETCH]</button>
+      </div>
+      <button class="add-btn" style="margin-top:8px;border-style:solid;border-color:var(--green);color:var(--green)" onclick="saveTimer()">[ ✓ SPEICHERN ]</button>
+    </div>
+
+    <!-- GONG: horizontal buttons, click = select + preview -->
+    <div class="card">
+      <div class="card-title">&gt; GONG_</div>
+      <div class="gong-row">
+        <button class="gong-btn" id="gong-zen"    onclick="selectGong('zen')"   >[ ZEN ]</button>
+        <button class="gong-btn" id="gong-tempel"  onclick="selectGong('tempel')">[ TEMPEL ]</button>
+        <button class="gong-btn" id="gong-bowl"    onclick="selectGong('bowl')"  >[ KLANGSCHALE ]</button>
+      </div>
+    </div>
+
+    <button class="apply-btn" style="display:none" onclick="applyConfig()">[ ✓ ANWENDEN ]</button>
+  </div>
+
+</main></div>
+
+<nav class="bottom-nav">
+  <button class="nav-btn active" onclick="showPanel('timer',this)">
+    <span class="nav-icon">&gt;_</span>TIMER
+  </button>
+  <button class="nav-btn" onclick="showPanel('config',this)">
+    <span class="nav-icon">/**/</span>CONFIG
+  </button>
+</nav>
+
+<div id="toast"></div>
+
+<script>
+// ── RAIN ──
+(() => {
+  const cv = document.getElementById('rain'), ctx = cv.getContext('2d');
+  const CHARS = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%&*<>[]{}|/\\+=~^'.split('');
+  const WORD = 'FINANCY';
+  const FS = 13; let cols, drops, wordDrops, fc = 0;
+  function resize() {
+    cv.width=innerWidth; cv.height=innerHeight;
+    cols=Math.floor(cv.width/FS);
+    drops=Array.from({length:cols},()=>Math.random()*-80);
+    wordDrops=Array.from({length:cols},()=>null);
+  }
+  resize(); addEventListener('resize', resize);
+  function draw() {
+    fc++; if(fc%5!==0){requestAnimationFrame(draw);return;}
+    ctx.fillStyle='rgba(0,0,0,0.05)'; ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.font=FS+'px "IBM Plex Mono",monospace';
+    for(let i=0;i<cols;i++){
+      const y=drops[i]*FS;
+      if(wordDrops[i]!==null){
+        const ch=WORD[wordDrops[i]];
+        ctx.fillStyle=wordDrops[i]===0?'#ffffff':'#aaffaa';
+        ctx.shadowColor='#33ff33'; ctx.shadowBlur=10;
+        ctx.fillText(ch,i*FS,y);
+        ctx.shadowBlur=0;
+        wordDrops[i]++;
+        if(wordDrops[i]>=WORD.length) wordDrops[i]=null;
+      } else {
+        const bright=drops[i]>0&&Math.random()>.95;
+        if(bright){ctx.fillStyle='#ccffcc';ctx.shadowColor='#33ff33';ctx.shadowBlur=6;}
+        else{const alpha=Math.min(1,(drops[i]%40)/40+0.3);ctx.fillStyle=`rgba(51,${Math.floor(180+Math.random()*75)},51,${alpha})`;ctx.shadowBlur=0;}
+        ctx.fillText(CHARS[Math.floor(Math.random()*CHARS.length)],i*FS,y);
+        ctx.shadowBlur=0;
+      }
+      drops[i]++;
+      if(y>cv.height&&Math.random()>.975){
+        drops[i]=0;
+        if(Math.random()>.88&&wordDrops[i]===null) wordDrops[i]=0;
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ── AUDIO ──
+let audioCtx = null;
+function ac() { if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
+
+function playGong(type, variant) {
+  const ctx = ac(), t = ctx.currentTime;
+  // variant: 'zen' | 'tempel' | 'bowl'
+  // type: 'next' | 'start' | 'finish'
+
+  const configs = {
+    zen:    { f: type==='finish'?174:type==='start'?220:196, decay:2.5, harmRatio:2.76, harmDecay:1.0, vol:0.55, waveform:'sine' },
+    tempel: { f: type==='finish'?130:type==='start'?164:146, decay:2.0, harmRatio:2.4,  harmDecay:0.8, vol:0.6,  waveform:'sine' },
+    bowl:   { f: type==='finish'?110:type==='start'?138:123, decay:4.0, harmRatio:2.2,  harmDecay:2.5, vol:0.6,  waveform:'sine' },
+  };
+  const c = configs[variant] || configs.zen;
+
+  // Fundamental
+  const osc = ctx.createOscillator(), gain = ctx.createGain();
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.type = c.waveform;
+  osc.frequency.setValueAtTime(c.f, t);
+  osc.frequency.exponentialRampToValueAtTime(c.f * 0.97, t + c.decay);
+  gain.gain.setValueAtTime(c.vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + c.decay);
+  osc.start(t); osc.stop(t + c.decay + 0.1);
+
+  // Harmonic partial
+  const osc2 = ctx.createOscillator(), gain2 = ctx.createGain();
+  osc2.connect(gain2); gain2.connect(ctx.destination);
+  osc2.type = c.waveform;
+  osc2.frequency.value = c.f * c.harmRatio;
+  gain2.gain.setValueAtTime(c.vol * 0.25, t);
+  gain2.gain.exponentialRampToValueAtTime(0.001, t + c.harmDecay);
+  osc2.start(t); osc2.stop(t + c.harmDecay + 0.1);
+
+  // For finish: play 3 ascending strikes
+  if (type === 'finish') {
+    const intervals2 = [0.6, 1.1];
+    intervals2.forEach(delay => {
+      const o3=ctx.createOscillator(), g3=ctx.createGain();
+      o3.connect(g3); g3.connect(ctx.destination);
+      o3.type=c.waveform;
+      o3.frequency.setValueAtTime(c.f*(1+delay*0.3), t+delay);
+      o3.frequency.exponentialRampToValueAtTime(c.f*(1+delay*0.3)*0.97, t+delay+c.decay*0.7);
+      g3.gain.setValueAtTime(c.vol*0.7, t+delay);
+      g3.gain.exponentialRampToValueAtTime(0.001, t+delay+c.decay*0.7);
+      o3.start(t+delay); o3.stop(t+delay+c.decay*0.7+0.1);
+    });
+  }
+}
+
+function beepStart()  { playGong('start',  selectedGong); }
+function beepNext()   { playGong('next',   selectedGong); }
+function beepFinish() { playGong('finish', selectedGong); }
+
+// ── STATE ──
+let intervals     = [];
+let rounds        = 3;
+let timerState    = 'idle';
+let currentRound  = 0;
+let currentInterval = 0;
+let remaining     = 0;
+let totalDur      = 0;
+let ticker        = null;
+let savedTimers   = [];
+let activeTimerName = '';
+let selectedGong  = 'zen';
+let editorItems   = [];
+
+// ── STORAGE ──
+function loadData() {
+  try {
+    const d = JSON.parse(localStorage.getItem('itimer_v3') || '{}');
+    intervals       = d.intervals       || [];
+    rounds          = d.rounds          || 3;
+    savedTimers     = d.savedTimers     || [];
+    activeTimerName = d.activeTimerName || '';
+    selectedGong    = d.selectedGong    || 'zen';
+  } catch(e) {}
+}
+function saveData() {
+  localStorage.setItem('itimer_v3', JSON.stringify({intervals, rounds, savedTimers, activeTimerName, selectedGong}));
+}
+
+// ── PANELS ──
+function showPanel(name, btn) {
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+  if(btn) btn.classList.add('active');
+  document.querySelector('.scroll-area').scrollTop = 0;
+  if(name==='config') { renderEditor(); renderSavedList(); renderGongSelector(); }
+  if(name==='timer')  renderQueue();
+}
+
+// ── ROUNDS ──
+function changeRounds(d) {
+  rounds = Math.max(1, rounds+d);
+  document.getElementById('rounds-display').textContent = rounds;
+  document.getElementById('round-total').textContent    = rounds;
+  saveData();
+}
+
+// ── SEQ TITLE ──
+function updateSeqTitle() {
+  const title = activeTimerName ? `&gt; SEQUENZ_${activeTimerName}` : '&gt; SEQUENZ_';
+  document.getElementById('seq-title').innerHTML = title;
+}
+
+// ── QUEUE ──
+function renderQueue() {
+  updateSeqTitle();
+  const el = document.getElementById('queue-list');
+  if (!intervals.length) {
+    el.innerHTML = '<div class="empty">// KEIN TIMER AKTIV<br>// CONFIG → TIMER SPEICHERN & AKTIVIEREN</div>';
+    document.getElementById('total-time-display').textContent = '--:--';
+    document.getElementById('interval-total').textContent = '-';
+    return;
+  }
+  const total = intervals.reduce((s,iv)=>s+iv.duration,0) * rounds;
+  document.getElementById('total-time-display').textContent = 'GESAMT: '+fmt(total);
+  document.getElementById('round-total').textContent    = rounds;
+  document.getElementById('interval-total').textContent = intervals.length;
+  el.innerHTML = intervals.map((iv,i)=>`
+    <div class="queue-item" id="qi-${i}">
+      <div class="queue-dot"></div>
+      <div class="queue-num">${String(i+1).padStart(2,'0')}</div>
+      <div class="queue-name">${iv.name}</div>
+      <div class="queue-dur">${fmt(iv.duration)}</div>
+    </div>`).join('');
+}
+
+// ── TIMER LOGIC ──
+function startTimer() {
+  if (!intervals.length) { showToast('> KEIN TIMER AKTIV'); return; }
+  if (timerState==='paused') {
+    timerState='running';
+    document.getElementById('btn-start').textContent='[ > LÄUFT ]';
+    document.getElementById('btn-start').disabled=true;
+    document.getElementById('btn-pause').disabled=false;
+    tick(); return;
+  }
+  timerState='running'; currentRound=1; currentInterval=0;
+  totalDur=intervals[0].duration; remaining=totalDur;
+  beepStart(); updateUI();
+  document.getElementById('btn-start').disabled=true;
+  document.getElementById('btn-pause').disabled=false;
+  document.getElementById('btn-stop').disabled=false;
+  requestWakeLock(); tick();
+}
+function pauseTimer() {
+  if(timerState!=='running') return;
+  timerState='paused'; clearTimeout(ticker);
+  document.getElementById('btn-start').textContent='[ > WEITER ]';
+  document.getElementById('btn-start').disabled=false;
+  document.getElementById('btn-pause').disabled=true;
+  document.getElementById('phase-label').textContent='|| PAUSIERT_';
+  document.getElementById('phase-label').className='timer-phase';
+}
+function stopTimer() {
+  timerState='idle'; clearTimeout(ticker);
+  document.getElementById('btn-start').textContent='[ > START ]';
+  document.getElementById('btn-start').disabled=false;
+  document.getElementById('btn-pause').disabled=true;
+  document.getElementById('btn-stop').disabled=true;
+  document.getElementById('clock').textContent='00:00';
+  document.getElementById('clock').className='timer-clock';
+  document.getElementById('progress-bar').style.width='100%';
+  document.getElementById('progress-bar').className='timer-progress-bar';
+  updateSeqTitle();
+  document.getElementById('phase-label').className='timer-phase';
+  document.getElementById('round-current').textContent='-';
+  document.getElementById('interval-current').textContent='-';
+  renderQueue();
+}
+function tick() {
+  if(timerState!=='running') return;
+  updateUI();
+  if(remaining<=0) { nextInterval(); return; }
+  remaining-=0.1; ticker=setTimeout(tick,100);
+}
+function nextInterval() {
+  beepNext(); currentInterval++;
+  if(currentInterval>=intervals.length) {
+    currentInterval=0; currentRound++;
+    if(currentRound>rounds) {
+      timerState='idle'; beepFinish();
+      document.getElementById('clock').textContent='00:00';
+      document.getElementById('clock').className='timer-clock';
+      document.getElementById('progress-bar').style.width='100%';
+      document.getElementById('progress-bar').className='timer-progress-bar';
+      document.getElementById('phase-label').textContent='✓ ABGESCHLOSSEN_';
+      document.getElementById('phase-label').className='timer-phase running';
+      document.getElementById('btn-start').textContent='[ > START ]';
+      document.getElementById('btn-start').disabled=false;
+      document.getElementById('btn-pause').disabled=true;
+      document.getElementById('btn-stop').disabled=true;
+      showToast('> SESSION ABGESCHLOSSEN'); return;
+    }
+  }
+  totalDur=intervals[currentInterval].duration; remaining=totalDur; tick();
+}
+function updateUI() {
+  const secs=Math.max(0,Math.ceil(remaining)), pct=totalDur>0?(remaining/totalDur)*100:0;
+  const clock=document.getElementById('clock'), bar=document.getElementById('progress-bar');
+  clock.textContent=fmt(secs);
+  if(secs<=3&&secs>0)  { clock.className='timer-clock danger';  bar.className='timer-progress-bar danger'; }
+  else if(secs<=10)    { clock.className='timer-clock warning'; bar.className='timer-progress-bar warning'; }
+  else                 { clock.className='timer-clock';         bar.className='timer-progress-bar'; }
+  bar.style.width=pct+'%';
+  if(timerState==='running'&&intervals[currentInterval]) {
+    document.getElementById('phase-label').textContent='> '+intervals[currentInterval].name.toUpperCase()+'_';
+    document.getElementById('phase-label').className='timer-phase running';
+  }
+  document.getElementById('round-current').textContent=currentRound;
+  document.getElementById('interval-current').textContent=currentInterval+1;
+  document.querySelectorAll('.queue-item').forEach((el,i)=>{
+    el.className='queue-item'+(i===currentInterval?' active-interval':'')+(i<currentInterval?' done':'');
+  });
+}
+
+// ── EDITOR ──
+function renderEditor() {
+  editorItems = intervals.map(iv=>({...iv}));
+  if(!editorItems.length) editorItems.push({name:'',duration:30});
+  paintEditor();
+}
+function paintEditor() {
+  document.getElementById('interval-editor').innerHTML = editorItems.map((iv,i)=>`
+    <div class="interval-item">
+      <input type="text" placeholder="NAME" value="${iv.name}" oninput="editorItems[${i}].name=this.value" autocomplete="off">
+      <input type="number" placeholder="MIN" min="0" value="${Math.floor(iv.duration/60)||''}" oninput="editorUpdate(${i},'min',this.value)" style="text-align:center">
+      <input type="number" placeholder="SEK" min="0" max="59" value="${iv.duration%60||''}" oninput="editorUpdate(${i},'sec',this.value)" style="text-align:center">
+      <button class="del-btn" onclick="removeInterval(${i})">✕</button>
+    </div>`).join('');
+}
+function editorUpdate(i,part,val) {
+  const n=parseInt(val)||0;
+  const m=part==='min'?n:Math.floor(editorItems[i].duration/60);
+  const s=part==='sec'?n:editorItems[i].duration%60;
+  editorItems[i].duration=m*60+s;
+}
+function addIntervalField() { editorItems.push({name:'',duration:30}); paintEditor(); }
+function removeInterval(i)  { editorItems.splice(i,1); if(!editorItems.length) editorItems.push({name:'',duration:30}); paintEditor(); }
+
+// ── SAVED TIMERS ──
+function renderSavedList() {
+  const el = document.getElementById('saved-list');
+  if(!savedTimers.length) {
+    el.innerHTML='<div class="empty" style="padding:12px 0 8px">// NOCH KEINE TIMER GESPEICHERT</div>';
+    return;
+  }
+  el.innerHTML = savedTimers.map((t,i)=>`
+    <div class="saved-item ${t.name===activeTimerName?'is-active':''}">
+      <div class="saved-name">${t.name}</div>
+      <div class="saved-meta">${t.intervals.length} INT.</div>
+      ${t.name===activeTimerName?'<div class="saved-active-badge">[ AKTIV ]</div>':''}
+      <button class="act-btn ${t.name===activeTimerName?'active-now':''}" onclick="activateTimer(${i})">[ AKTIVIEREN ]</button>
+      <button class="sp-del-btn" onclick="deleteTimer(${i})">✕</button>
+    </div>`).join('');
+}
+
+function saveTimer() {
+  const valid = editorItems.filter(iv=>iv.name.trim()&&iv.duration>0);
+  const name  = document.getElementById('save-name-input').value.trim().toUpperCase();
+  if(!name)         { showToast('> NAME FEHLT'); return; }
+  if(!valid.length) { showToast('> KEINE GÜLTIGEN INTERVALLE'); return; }
+  // overwrite if name exists
+  const idx = savedTimers.findIndex(t=>t.name===name);
+  if(idx>=0) savedTimers[idx] = {name, intervals:valid};
+  else savedTimers.push({name, intervals:valid});
+  saveData();
+  renderSavedList();
+  document.getElementById('save-name-input').value='';
+  showToast('> TIMER GESPEICHERT: '+name);
+}
+
+function activateTimer(i) {
+  const t = savedTimers[i];
+  intervals       = t.intervals.map(iv=>({...iv}));
+  activeTimerName = t.name;
+  editorItems     = intervals.map(iv=>({...iv}));
+  paintEditor();
+  saveData();
+  renderSavedList();
+  renderQueue();
+  showToast('> AKTIVIERT: '+t.name);
+}
+
+function deleteTimer(i) {
+  if(!confirm('Timer "'+savedTimers[i].name+'" löschen?')) return;
+  if(savedTimers[i].name===activeTimerName) { intervals=[]; activeTimerName=''; }
+  savedTimers.splice(i,1);
+  saveData();
+  renderSavedList();
+  renderQueue();
+  showToast('> GELÖSCHT');
+}
+
+// ── PRESETS ──
+const BUILTINS = {
+  hiit:     [{name:'ARBEIT',duration:40},{name:'PAUSE',duration:20}],
+  tabata:   [{name:'WORK',duration:20},{name:'REST',duration:10}],
+  pomodoro: [{name:'FOKUS',duration:1500},{name:'PAUSE',duration:300}],
+  boxing:   [{name:'RUNDE',duration:180},{name:'ECKE',duration:60}],
+  stretch:  [{name:'DEHNEN',duration:30},{name:'WECHSEL',duration:5}],
+};
+function loadPreset(key) {
+  editorItems = BUILTINS[key].map(iv=>({...iv}));
+  paintEditor();
+  showToast('> PRESET: '+key.toUpperCase());
+}
+
+// ── GONG ──
+function selectGong(g) {
+  selectedGong = g;
+  renderGongSelector();
+  saveData();
+  playGong('next', g);
+}
+function renderGongSelector() {
+  ['zen','tempel','bowl'].forEach(g=>{
+    const el = document.getElementById('gong-'+g);
+    if(el) el.className = 'gong-btn' + (selectedGong===g?' selected':'');
+  });
+}
+
+// ── APPLY (just intervals from editor) ──
+function applyConfig() {
+  const valid = editorItems.filter(iv=>iv.name.trim()&&iv.duration>0);
+  if(!valid.length) { showToast('> KEINE GÜLTIGEN INTERVALLE'); return; }
+  intervals = valid;
+  // clear active timer name if intervals differ
+  const activeTimer = savedTimers.find(t=>t.name===activeTimerName);
+  if(!activeTimer || JSON.stringify(activeTimer.intervals)!==JSON.stringify(valid)) {
+    activeTimerName = '';
+  }
+  saveData(); renderQueue();
+  showToast('> ANGEWENDET');
+  showPanel('timer', document.querySelectorAll('.nav-btn')[0]);
+  document.querySelectorAll('.nav-btn')[0].classList.add('active');
+  document.querySelectorAll('.nav-btn')[1].classList.remove('active');
+}
+
+// ── HELPERS ──
+function fmt(s) { s=Math.max(0,Math.round(s)); return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+let toastTimer;
+function showToast(msg) {
+  const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),2400);
+}
+let wakeLock=null;
+async function requestWakeLock() { try{if('wakeLock' in navigator) wakeLock=await navigator.wakeLock.request('screen');}catch(e){} }
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&timerState==='running')requestWakeLock();});
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded',()=>{
+  loadData();
+  document.getElementById('rounds-display').textContent=rounds;
+  document.getElementById('round-total').textContent=rounds;
+  renderGongSelector();
+  renderQueue();
+});
+
+// ── SERVICE WORKER ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
+// ── INSTALL BANNER ──
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (!localStorage.getItem('timer_install_dismissed')) {
+    document.getElementById('install-banner').style.display = 'flex';
+  }
+});
+function installApp() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt.userChoice.then(() => {
+    deferredInstallPrompt = null;
+    document.getElementById('install-banner').style.display = 'none';
+  });
+}
+function dismissInstall() {
+  document.getElementById('install-banner').style.display = 'none';
+  localStorage.setItem('timer_install_dismissed', '1');
+}
+</script>
+</body>
+</html>
