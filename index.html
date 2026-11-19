@@ -113,6 +113,20 @@ main { padding: 16px; max-width: 560px; margin: 0 auto; width: 100%; }
   display: flex; align-items: center; justify-content: center; transition: all .12s;
 }
 .round-btn:active { transform: scale(.9); background: rgba(51,255,51,.1); }
+.timer-select-wrap { position: relative; flex: 1; max-width: 220px; margin-left: 16px; }
+.timer-select {
+  width: 100%; background: #000; border: 1px solid var(--border); border-radius: 3px;
+  color: var(--green); font-family: var(--mono); font-size: 14px; font-weight: 600;
+  padding: 7px 30px 7px 10px; outline: none; cursor: pointer; letter-spacing: .04em;
+  -webkit-appearance: none; appearance: none; text-shadow: var(--glow-sm);
+}
+.timer-select:focus { border-color: var(--green); box-shadow: var(--glow-sm); }
+.timer-select:disabled { opacity: .5; cursor: default; }
+.timer-select option { background: #000; color: var(--green); }
+.timer-select-wrap::after {
+  content: '▼'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 10px; color: var(--muted); pointer-events: none;
+}
 
 /* ── QUEUE ── */
 .queue-title { font-size: 11px; color: var(--muted); letter-spacing: .1em; margin-bottom: 10px; }
@@ -282,6 +296,13 @@ input::placeholder { color: var(--muted); }
         <button class="round-btn" onclick="changeRounds(-1)">−</button>
         <div class="rounds-val" id="rounds-display">3</div>
         <button class="round-btn" onclick="changeRounds(1)">+</button>
+      </div>
+    </div>
+
+    <div class="rounds-display">
+      <div class="rounds-label">TIMER</div>
+      <div class="timer-select-wrap">
+        <select class="timer-select" id="timer-select" onchange="selectTimerFromList(this.value)"></select>
       </div>
     </div>
 
@@ -500,9 +521,29 @@ function updateSeqTitle() {
   document.getElementById('seq-title').innerHTML = title;
 }
 
+// ── TIMER-AUSWAHL ──
+function renderTimerSelect() {
+  const sel = document.getElementById('timer-select');
+  if (!savedTimers.length) {
+    sel.innerHTML = '<option value="">// KEINE GESPEICHERT</option>';
+    sel.disabled = true;
+    return;
+  }
+  const hasActive = savedTimers.some(t=>t.name===activeTimerName);
+  sel.innerHTML = (hasActive ? '' : '<option value="" selected>-- WÄHLEN --</option>') +
+    savedTimers.map((t,i)=>`<option value="${i}" ${t.name===activeTimerName?'selected':''}>${t.name}</option>`).join('');
+  sel.disabled = timerState!=='idle';
+}
+function selectTimerFromList(v) {
+  if (v==='') return;
+  if (timerState!=='idle') { showToast('> ERST STOPPEN'); renderTimerSelect(); return; }
+  activateTimer(+v);
+}
+
 // ── QUEUE ──
 function renderQueue() {
   updateSeqTitle();
+  renderTimerSelect();
   const el = document.getElementById('queue-list');
   if (!intervals.length) {
     el.innerHTML = '<div class="empty">// KEIN TIMER AKTIV<br>// CONFIG → TIMER SPEICHERN & AKTIVIEREN</div>';
@@ -539,6 +580,7 @@ function startTimer() {
   document.getElementById('btn-start').disabled=true;
   document.getElementById('btn-pause').disabled=false;
   document.getElementById('btn-stop').disabled=false;
+  renderTimerSelect();
   requestWakeLock(); tick();
 }
 function pauseTimer() {
@@ -577,7 +619,7 @@ function nextInterval() {
   if(currentInterval>=intervals.length) {
     currentInterval=0; currentRound++;
     if(currentRound>rounds) {
-      timerState='idle'; beepFinish();
+      timerState='idle'; beepFinish(); renderTimerSelect();
       document.getElementById('clock').textContent='00:00';
       document.getElementById('clock').className='timer-clock';
       document.getElementById('progress-bar').style.width='100%';
